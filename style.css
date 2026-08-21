@@ -124,6 +124,7 @@ button { color: inherit; }
 .breakdown-row:first-of-type { border-top: 0; }
 .breakdown-row span:first-child { color: var(--muted); }
 .weak-spots { margin-top: 1.25rem; padding: clamp(1.25rem, 4vw, 2rem); border: 1px solid var(--line); border-radius: 18px; background: #fff; }
+.weak-spots:focus { outline: 3px solid rgba(34, 94, 168, .28); outline-offset: 3px; }
 .weak-spots-heading { display: flex; align-items: start; justify-content: space-between; gap: 1rem; margin-bottom: 1.25rem; }
 .weak-spots-heading h2 { margin: .15rem 0 .4rem; font-size: clamp(1.35rem, 3vw, 1.75rem); }
 .weak-spots-heading p:last-child { margin: 0; color: var(--muted); line-height: 1.5; }

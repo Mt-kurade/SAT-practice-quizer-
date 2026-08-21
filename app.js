@@ -656,7 +656,7 @@
     const groups = weakSpotGroups(mistakes);
     const totalAttempts = mistakes.reduce((sum, question) => sum + (question.incorrectAttempts || 0), 0);
     return `
-      <section class="weak-spots" aria-labelledby="weak-spots-title">
+      <section class="weak-spots" id="weak-spots" tabindex="-1" aria-labelledby="weak-spots-title">
         <div class="weak-spots-heading">
           <div>
             <p class="eyebrow">Personal study plan</p>
@@ -717,17 +717,18 @@
           <div class="score-detail">${correct} / ${answered.length} completed without a mistake</div>
           <div class="results-actions">
             <button class="button primary" data-result-action="mistakes" ${mistakes.length ? "" : "disabled"}>Review mistakes</button>
+            <button class="button secondary" data-result-action="weak-spots" ${mistakes.length ? "" : "disabled"}>Study weak spots</button>
             <button class="button secondary" data-result-action="all">Review all questions</button>
             <button class="button secondary" data-result-action="retry" ${mistakes.length ? "" : "disabled"}>Retry incorrect</button>
             <button class="button secondary" data-result-action="reset">Reset deck</button>
             <button class="button secondary" data-result-action="decks">Back to decks</button>
           </div>
         </div>
+        ${weakSpotsHtml(mistakes)}
         <div class="breakdowns">
           ${breakdownCard("By skill", breakdown(answered, "skill"))}
           ${breakdownCard("By difficulty", breakdown(answered, "difficulty"))}
         </div>
-        ${weakSpotsHtml(mistakes)}
       </section>`;
     appMain.focus({ preventScroll: true });
   }
@@ -787,6 +788,12 @@
     const deck = currentDeck();
     if (!resultAction || !deck) return;
     if (resultAction === "decks") return renderDecks();
+    if (resultAction === "weak-spots") {
+      const weakSpots = document.querySelector("#weak-spots");
+      weakSpots?.scrollIntoView({ behavior: "smooth", block: "start" });
+      weakSpots?.focus({ preventScroll: true });
+      return;
+    }
     if (resultAction === "all") return startDeck(deck.id, { sequence: deck.questions.map((q) => q.questionId), label: "Review all", forceQuiz: true });
     if (resultAction === "mistakes") return startDeck(deck.id, { sequence: deck.questions.filter((q) => (q.incorrectAttempts || 0) > 0).map((q) => q.questionId), label: "Review mistakes", forceQuiz: true });
     if (resultAction === "retry") return retryMistakes();
