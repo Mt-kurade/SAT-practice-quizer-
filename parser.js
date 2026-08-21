@@ -187,6 +187,8 @@ function parseQuestionText(rawText, pageNumber = 1) {
     selectedAnswer: null,
     answered: false,
     correct: null,
+    incorrectAttempts: 0,
+    lastIncorrectAnswer: null,
     sourcePage: pageNumber,
     media: [],
   };

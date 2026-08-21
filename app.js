@@ -355,7 +355,7 @@
         <div class="answers" role="group" aria-label="Answer choices">
           ${answerEntries.map(([letter, answer]) => answerButton(question, letter, answer)).join("")}
         </div>
-        ${question.answered ? feedbackHtml(question) : ""}
+        ${question.answered || question.lastIncorrectAnswer ? feedbackHtml(question) : ""}
       </section>
       <footer class="quiz-footer">
         <div class="quiz-footer-inner">
@@ -377,20 +377,25 @@
   function answerButton(question, letter, text) {
     const selected = question.selectedAnswer === letter;
     const correct = question.answered && question.correctAnswer === letter;
-    const incorrect = question.answered && selected && !question.correct;
+    const incorrect = !question.answered && question.lastIncorrectAnswer === letter;
     const classes = ["answer", selected && !question.answered ? "selected" : "", correct ? "correct" : "", incorrect ? "incorrect" : ""].filter(Boolean).join(" ");
     let result = "";
     if (correct) result = "✓ Correct answer";
-    else if (incorrect) result = "✕ Your answer";
+    else if (incorrect) result = "✕ Try again";
     return `<button class="${classes}" data-answer="${letter}" ${question.answered ? "disabled" : ""} aria-pressed="${selected}">
       <span class="answer-letter">${letter}</span><span class="answer-text">${escapeHtml(text)}</span>${result ? `<span class="answer-result">${result}</span>` : ""}
     </button>`;
   }
 
   function feedbackHtml(question) {
+    if (!question.answered) {
+      return `<section class="feedback incorrect" aria-live="polite">
+        <h2 class="feedback-title">✕ Not quite</h2>
+        <p>Try this question again. The correct answer and explanation will stay hidden until you get it right.</p>
+      </section>`;
+    }
     return `<section class="feedback ${question.correct ? "" : "incorrect"}" aria-live="polite">
-      <h2 class="feedback-title">${question.correct ? "✓ Correct" : "✕ Not quite"}</h2>
-      ${question.correct ? "" : `<p><strong>Correct answer: ${question.correctAnswer}</strong></p>`}
+      <h2 class="feedback-title">✓ Correct</h2>
       <h3>Explanation</h3>
       <p>${escapeHtml(question.rationale || "No rationale was available in the extracted PDF text.")}</p>
     </section>`;
@@ -400,6 +405,7 @@
     const question = currentQuestion();
     if (!question || question.answered || !question.answers[letter]) return;
     question.selectedAnswer = letter;
+    question.lastIncorrectAnswer = null;
     renderQuiz();
     document.querySelector(`[data-answer="${letter}"]`)?.focus();
   }
@@ -408,8 +414,17 @@
     const deck = currentDeck();
     const question = currentQuestion();
     if (!question?.selectedAnswer || question.answered) return;
-    question.answered = true;
-    question.correct = question.selectedAnswer === question.correctAnswer;
+    if (question.selectedAnswer !== question.correctAnswer) {
+      question.incorrectAttempts = (question.incorrectAttempts || 0) + 1;
+      question.lastIncorrectAnswer = question.selectedAnswer;
+      question.selectedAnswer = null;
+      question.answered = false;
+      question.correct = null;
+    } else {
+      question.answered = true;
+      question.correct = true;
+      question.lastIncorrectAnswer = null;
+    }
     await saveDeck(deck);
     renderQuiz();
     document.querySelector(".feedback")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -452,7 +467,7 @@
     if (!deck) return renderDecks();
     const answered = deck.questions.filter((question) => question.answered);
     const correct = answered.filter((question) => question.correct).length;
-    const mistakes = deck.questions.filter((question) => question.answered && !question.correct);
+    const mistakes = deck.questions.filter((question) => (question.incorrectAttempts || 0) > 0);
     const percent = answered.length ? Math.round(correct / answered.length * 100) : 0;
     setHeader(deck.name, `<button class="button secondary text-button" data-header-action="decks">Decks</button>`);
     appMain.innerHTML = `
@@ -484,7 +499,7 @@
 
   async function resetDeck(deck, ask = true) {
     if (ask && !confirm(`Reset all progress for “${deck.name}”?`)) return false;
-    deck.questions.forEach((question) => Object.assign(question, { selectedAnswer: null, answered: false, correct: null }));
+    deck.questions.forEach((question) => Object.assign(question, { selectedAnswer: null, answered: false, correct: null, incorrectAttempts: 0, lastIncorrectAnswer: null }));
     await saveDeck(deck);
     toast("Deck progress reset");
     return true;
@@ -492,8 +507,8 @@
 
   async function retryMistakes() {
     const deck = currentDeck();
-    const ids = deck.questions.filter((question) => question.answered && !question.correct).map((question) => question.questionId);
-    deck.questions.filter((question) => ids.includes(question.questionId)).forEach((question) => Object.assign(question, { selectedAnswer: null, answered: false, correct: null }));
+    const ids = deck.questions.filter((question) => (question.incorrectAttempts || 0) > 0).map((question) => question.questionId);
+    deck.questions.filter((question) => ids.includes(question.questionId)).forEach((question) => Object.assign(question, { selectedAnswer: null, answered: false, correct: null, incorrectAttempts: 0, lastIncorrectAnswer: null }));
     await saveDeck(deck);
     startDeck(deck.id, { sequence: ids, label: "Retry incorrect", forceQuiz: true });
   }
@@ -534,7 +549,7 @@
     if (!resultAction || !deck) return;
     if (resultAction === "decks") return renderDecks();
     if (resultAction === "all") return startDeck(deck.id, { sequence: deck.questions.map((q) => q.questionId), label: "Review all", forceQuiz: true });
-    if (resultAction === "mistakes") return startDeck(deck.id, { sequence: deck.questions.filter((q) => q.answered && !q.correct).map((q) => q.questionId), label: "Review mistakes", forceQuiz: true });
+    if (resultAction === "mistakes") return startDeck(deck.id, { sequence: deck.questions.filter((q) => (q.incorrectAttempts || 0) > 0).map((q) => q.questionId), label: "Review mistakes", forceQuiz: true });
     if (resultAction === "retry") return retryMistakes();
     if (resultAction === "reset" && await resetDeck(deck)) return startDeck(deck.id);
   });
@@ -576,6 +591,19 @@
   async function initialize() {
     try {
       state.decks = await storage.all();
+      // Convert incorrect answers saved by the earlier one-attempt flow into
+      // retryable questions without exposing their correct answers.
+      const migrated = state.decks.filter((deck) => deck.questions.some((question) => question.answered && question.correct === false));
+      migrated.forEach((deck) => deck.questions.forEach((question) => {
+        if (question.answered && question.correct === false) {
+          question.incorrectAttempts = Math.max(1, question.incorrectAttempts || 0);
+          question.lastIncorrectAnswer = question.selectedAnswer;
+          question.selectedAnswer = null;
+          question.answered = false;
+          question.correct = null;
+        }
+      }));
+      await Promise.all(migrated.map(saveDeck));
       renderDecks();
     } catch (error) {
       console.error(error);

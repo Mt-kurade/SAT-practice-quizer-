@@ -40,6 +40,8 @@ assert.equal(parsed.question.answers.D, "commercial plastics have two associated
 assert.equal(parsed.question.prompt, "Which choice completes the text so that it conforms to the conventions of Standard English?");
 assert.match(parsed.question.passage, /Despite being cheap/);
 assert.equal(parsed.question.sourcePage, 3);
+assert.equal(parsed.question.incorrectAttempts, 0);
+assert.equal(parsed.question.lastIncorrectAnswer, null);
 
 const withBadPage = parseSatPages([acceptanceQuestion, "A scanned page with no extractable question."]);
 assert.equal(withBadPage.questions.length, 1);
