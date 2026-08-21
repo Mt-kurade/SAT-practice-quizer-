@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#225ea8">
+  <title>SAT Practice</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip-link" href="#app-main">Skip to content</a>
+  <div id="app" class="app-shell">
+    <header class="site-header">
+      <button id="brand-button" class="brand-button" type="button" aria-label="Go to My SAT Decks">
+        <span class="brand-mark" aria-hidden="true">S</span>
+        <span>SAT Practice</span>
+      </button>
+      <div id="header-center" class="header-center"></div>
+      <div id="header-actions" class="header-actions"></div>
+    </header>
+    <main id="app-main" tabindex="-1"></main>
+  </div>
+
+  <dialog id="import-dialog" class="modal import-modal" aria-labelledby="import-title">
+    <form method="dialog" class="modal-frame">
+      <div class="modal-heading">
+        <div>
+          <p class="eyebrow">New study deck</p>
+          <h2 id="import-title">Import Question Bank PDF</h2>
+        </div>
+        <button class="icon-button" value="cancel" aria-label="Close import dialog">×</button>
+      </div>
+      <div id="import-content"></div>
+    </form>
+  </dialog>
+
+  <dialog id="rename-dialog" class="modal" aria-labelledby="rename-title">
+    <form id="rename-form" method="dialog" class="modal-frame compact-modal">
+      <h2 id="rename-title">Rename deck</h2>
+      <label class="field-label" for="rename-input">Deck name</label>
+      <input id="rename-input" class="text-input" maxlength="100" required>
+      <div class="modal-actions">
+        <button class="button secondary" value="cancel">Cancel</button>
+        <button class="button primary" value="save">Save name</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
+
+  <script src="vendor/pdf.min.js"></script>
+  <script src="parser.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
