@@ -422,7 +422,10 @@
       question.correct = null;
     } else {
       question.answered = true;
-      question.correct = true;
+      // A correct retry completes the question, but an earlier miss in the
+      // same quiz still counts against the score. "Retry incorrect" resets
+      // incorrectAttempts so a clean post-quiz repeat can clear the mistake.
+      question.correct = (question.incorrectAttempts || 0) === 0;
       question.lastIncorrectAnswer = null;
     }
     await saveDeck(deck);
@@ -476,7 +479,7 @@
           <p class="eyebrow">${answered.length === deck.questions.length ? "Deck complete" : "Progress so far"}</p>
           <h1 id="results-title">${escapeHtml(deck.name)}</h1>
           <div class="score">${percent}%</div>
-          <div class="score-detail">${correct} / ${answered.length} answered correctly</div>
+          <div class="score-detail">${correct} / ${answered.length} completed without a mistake</div>
           <div class="results-actions">
             <button class="button primary" data-result-action="mistakes" ${mistakes.length ? "" : "disabled"}>Review mistakes</button>
             <button class="button secondary" data-result-action="all">Review all questions</button>
@@ -593,14 +596,19 @@
       state.decks = await storage.all();
       // Convert incorrect answers saved by the earlier one-attempt flow into
       // retryable questions without exposing their correct answers.
-      const migrated = state.decks.filter((deck) => deck.questions.some((question) => question.answered && question.correct === false));
+      const migrated = state.decks.filter((deck) => deck.questions.some((question) =>
+        (question.answered && question.correct === false && !(question.incorrectAttempts > 0)) ||
+        (question.answered && question.correct === true && question.incorrectAttempts > 0)
+      ));
       migrated.forEach((deck) => deck.questions.forEach((question) => {
-        if (question.answered && question.correct === false) {
+        if (question.answered && question.correct === false && !(question.incorrectAttempts > 0)) {
           question.incorrectAttempts = Math.max(1, question.incorrectAttempts || 0);
           question.lastIncorrectAnswer = question.selectedAnswer;
           question.selectedAnswer = null;
           question.answered = false;
           question.correct = null;
+        } else if (question.answered && question.correct === true && question.incorrectAttempts > 0) {
+          question.correct = false;
         }
       }));
       await Promise.all(migrated.map(saveDeck));
