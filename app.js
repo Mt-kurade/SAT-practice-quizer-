@@ -7,6 +7,158 @@
   const STORE_NAME = "decks";
   const DB_VERSION = 1;
   const ANSWER_KEYS = { "1": "A", "2": "B", "3": "C", "4": "D", a: "A", b: "B", c: "C", d: "D" };
+  const THEORY_GUIDES = [
+    {
+      pattern: /form, structure|sentence structure|subject.?verb|pronoun|modifier|agreement|verb tense|parallel/,
+      title: "Sentence structure and grammar",
+      concepts: [
+        "Identify the subject, main verb, and complete clause before judging punctuation or wording.",
+        "Make modifiers point clearly to the word they describe, and keep pronouns, verbs, and comparisons logically aligned.",
+        "Prefer the choice that creates a complete, concise sentence without changing the intended meaning.",
+      ],
+      practice: "Label each clause and its subject–verb pair before comparing the answer choices.",
+    },
+    {
+      pattern: /boundar|punctuation|comma|semicolon|colon|dash/,
+      title: "Clause boundaries and punctuation",
+      concepts: [
+        "An independent clause can stand alone; a dependent clause cannot.",
+        "Use a period or semicolon between two independent clauses. A comma alone cannot join them.",
+        "Use colons and dashes only after a complete clause when introducing an explanation, example, or list.",
+      ],
+      practice: "Cover the punctuation choices, classify the clauses on both sides, and then choose the legal boundary.",
+    },
+    {
+      pattern: /transition/,
+      title: "Logical transitions",
+      concepts: [
+        "Determine the relationship between the ideas before looking at the transition choices.",
+        "Common relationships include continuation, contrast, cause and effect, and example or emphasis.",
+        "Choose by logical function, not by which transition merely sounds natural.",
+      ],
+      practice: "Write your own simple connector—such as ‘but,’ ‘therefore,’ or ‘for example’—before checking the choices.",
+    },
+    {
+      pattern: /rhetorical synthesis|synthesis|student wants/,
+      title: "Rhetorical synthesis",
+      concepts: [
+        "Treat the stated writing goal as the rule for deciding which notes matter.",
+        "Include only facts that directly accomplish the goal; accurate but irrelevant facts are distractions.",
+        "Check that comparisons and claims preserve the notes precisely without adding assumptions.",
+      ],
+      practice: "Underline the task verb and audience, then select only the notes that directly serve both.",
+    },
+    {
+      pattern: /words? in context|vocabulary|connotation/,
+      title: "Words in context",
+      concepts: [
+        "Use the sentence’s logic and tone to predict a meaning before considering the choices.",
+        "Test the ordinary meaning of each choice in the sentence; rare dictionary meanings are usually traps.",
+        "Match both denotation and connotation, especially whether the surrounding tone is positive, neutral, or negative.",
+      ],
+      practice: "Replace the blank with your own simple word first, then choose the closest match.",
+    },
+    {
+      pattern: /text structure|purpose|function of|overall structure/,
+      title: "Text structure and purpose",
+      concepts: [
+        "Summarize what each sentence or paragraph does, not just what it says.",
+        "Distinguish introducing, supporting, contrasting, qualifying, and concluding roles.",
+        "Purpose answers should describe both the author’s action and its role in the passage.",
+      ],
+      practice: "Annotate each section with a short function label such as ‘claim,’ ‘example,’ or ‘counterpoint.’",
+    },
+    {
+      pattern: /central idea|main idea|detail/,
+      title: "Central ideas and supporting details",
+      concepts: [
+        "The central idea must cover the passage as a whole rather than one vivid detail.",
+        "A correct detail answer should be stated or directly paraphrased in the text.",
+        "Reject choices that are true in general but unsupported, too narrow, or too broad.",
+      ],
+      practice: "State the passage’s subject and the author’s main point about it in one sentence.",
+    },
+    {
+      pattern: /inference|infer/,
+      title: "Text-based inference",
+      concepts: [
+        "An inference must be supported by specific information even when it is not stated word for word.",
+        "Prefer the smallest conclusion the evidence guarantees; avoid plausible but speculative extensions.",
+        "Check every part of an answer choice, since one unsupported word makes the whole choice wrong.",
+      ],
+      practice: "Finish the sentence ‘Because the text says ___, it follows that ___.’",
+    },
+    {
+      pattern: /command of evidence|evidence|quantitative|graph|table/,
+      title: "Evidence and data",
+      concepts: [
+        "Identify the exact claim that the evidence must strengthen, weaken, or illustrate.",
+        "For tables and graphs, read axis labels, units, groups, and direction before interpreting values.",
+        "The best evidence proves the claim directly rather than merely discussing the same topic.",
+      ],
+      practice: "Translate the claim into a prediction about what the strongest quotation or data point must show.",
+    },
+    {
+      pattern: /cross-text|paired text|two texts/,
+      title: "Cross-text connections",
+      concepts: [
+        "State each author’s central claim separately before comparing them.",
+        "Decide whether the authors agree, disagree, qualify one another, or focus on different aspects.",
+        "Do not attribute an idea from one text to the other without direct support.",
+      ],
+      practice: "Write ‘Text 1 says…’ and ‘Text 2 says…,’ then describe the relationship in one precise verb.",
+    },
+    {
+      pattern: /linear|system of equation|equation in one|inequalit/,
+      title: "Linear equations and systems",
+      concepts: [
+        "Keep equations balanced by performing the same operation on both sides.",
+        "Interpret slope as a rate of change and the intercept as the value when the input is zero.",
+        "For systems, a solution must satisfy every equation; use substitution or elimination deliberately.",
+      ],
+      practice: "Define variables and units first, then verify the solution in the original equation or context.",
+    },
+    {
+      pattern: /quadratic|nonlinear|function|exponential|polynomial/,
+      title: "Functions and nonlinear relationships",
+      concepts: [
+        "Connect equivalent forms to useful features such as roots, intercepts, vertex, and growth factor.",
+        "Treat function notation as input and output: evaluate by substituting the input everywhere it appears.",
+        "Use the context and units to reject algebraic solutions that are not meaningful.",
+      ],
+      practice: "Name the feature the question asks for, then choose the algebraic form that exposes that feature.",
+    },
+    {
+      pattern: /ratio|rate|proportion|percent|unit conversion/,
+      title: "Ratios, rates, and percentages",
+      concepts: [
+        "Keep units attached to quantities and convert before combining unlike units.",
+        "A percent change is change divided by the original value, not the final value.",
+        "Use proportional relationships only when the ratio truly remains constant.",
+      ],
+      practice: "Write the units in every ratio and estimate the expected size of the answer before calculating.",
+    },
+    {
+      pattern: /data|statistics|probability|scatterplot|sample|mean|median/,
+      title: "Data analysis and probability",
+      concepts: [
+        "Match the statistic to the question: center, spread, association, or probability.",
+        "Separate correlation from causation and samples from the populations they represent.",
+        "Probability is favorable outcomes divided by all possible outcomes when outcomes are equally likely.",
+      ],
+      practice: "Describe the data in words—including population, variable, and units—before using a formula.",
+    },
+    {
+      pattern: /geometry|triangle|circle|angle|volume|area|trigonometry/,
+      title: "Geometry and trigonometry",
+      concepts: [
+        "Draw and label the figure from the given information instead of relying on its apparent scale.",
+        "Track whether a formula uses a radius, diameter, height, area, or volume and keep units consistent.",
+        "Use similarity, the Pythagorean theorem, and right-triangle ratios only after identifying corresponding sides.",
+      ],
+      practice: "Mark every known value and the requested quantity, then choose one relationship that connects them directly.",
+    },
+  ];
   const appMain = document.querySelector("#app-main");
   const headerCenter = document.querySelector("#header-center");
   const headerActions = document.querySelector("#header-actions");
@@ -465,6 +617,89 @@
     return [...groups.entries()];
   }
 
+  function theoryGuideFor(question) {
+    const metadata = `${question.skill || ""} ${question.domain || ""}`.toLowerCase();
+    const matched = THEORY_GUIDES.find((guide) => guide.pattern.test(metadata));
+    if (matched) return matched;
+    const skill = question.skill || question.domain || "this SAT skill";
+    return {
+      title: `${skill} fundamentals`,
+      concepts: [
+        `Review the definition and core rule for ${skill}.`,
+        "Use the official rationale to identify the exact clue or rule that makes the correct choice work.",
+        "For each rejected choice, explain the specific rule, evidence, or calculation it violates.",
+      ],
+      practice: "Redo a fresh example slowly, state the rule before solving, and check each step against that rule.",
+    };
+  }
+
+  function weakSpotGroups(questions) {
+    const groups = new Map();
+    questions.forEach((question) => {
+      const skill = question.skill || "Unspecified skill";
+      const domain = question.domain || "SAT practice";
+      const key = `${domain}\u0000${skill}`;
+      if (!groups.has(key)) groups.set(key, { skill, domain, questions: [], difficulties: new Set(), guide: theoryGuideFor(question) });
+      const group = groups.get(key);
+      group.questions.push(question);
+      if (question.difficulty) group.difficulties.add(question.difficulty);
+    });
+    return [...groups.values()].sort((a, b) => {
+      const attemptsA = a.questions.reduce((sum, question) => sum + (question.incorrectAttempts || 0), 0);
+      const attemptsB = b.questions.reduce((sum, question) => sum + (question.incorrectAttempts || 0), 0);
+      return attemptsB - attemptsA;
+    });
+  }
+
+  function weakSpotsHtml(mistakes) {
+    if (!mistakes.length) return "";
+    const groups = weakSpotGroups(mistakes);
+    const totalAttempts = mistakes.reduce((sum, question) => sum + (question.incorrectAttempts || 0), 0);
+    return `
+      <section class="weak-spots" aria-labelledby="weak-spots-title">
+        <div class="weak-spots-heading">
+          <div>
+            <p class="eyebrow">Personal study plan</p>
+            <h2 id="weak-spots-title">Weak spots to relearn</h2>
+            <p>Generated locally from ${totalAttempts} missed ${totalAttempts === 1 ? "attempt" : "attempts"} across ${mistakes.length} ${mistakes.length === 1 ? "question" : "questions"}.</p>
+          </div>
+          <span class="weak-count">${groups.length} ${groups.length === 1 ? "topic" : "topics"}</span>
+        </div>
+        <div class="weak-spot-list">${groups.map(weakSpotCard).join("")}</div>
+      </section>`;
+  }
+
+  function weakSpotCard(group) {
+    const attempts = group.questions.reduce((sum, question) => sum + (question.incorrectAttempts || 0), 0);
+    return `
+      <article class="weak-spot-card">
+        <div class="weak-spot-top">
+          <div>
+            <div class="weak-spot-meta">
+              <span class="pill">${escapeHtml(group.domain)}</span>
+              ${[...group.difficulties].map((difficulty) => `<span class="pill">${escapeHtml(difficulty)}</span>`).join("")}
+            </div>
+            <h3>${escapeHtml(group.skill)}</h3>
+            <p class="theory-title">Theory refresh: ${escapeHtml(group.guide.title)}</p>
+          </div>
+          <div class="attempt-badge"><strong>${attempts}</strong><span>missed ${attempts === 1 ? "attempt" : "attempts"}</span></div>
+        </div>
+        <ul class="theory-list">${group.guide.concepts.map((concept) => `<li>${escapeHtml(concept)}</li>`).join("")}</ul>
+        <div class="practice-tip"><strong>How to practice</strong><span>${escapeHtml(group.guide.practice)}</span></div>
+        <details class="rationale-review">
+          <summary>Review ${group.questions.length === 1 ? "the missed question" : `${group.questions.length} missed questions`} and official explanations</summary>
+          <div class="rationale-list">
+            ${group.questions.map((question) => `
+              <article>
+                <strong>Question ${escapeHtml(question.questionId)}</strong>
+                <span>${question.incorrectAttempts || 1} missed ${(question.incorrectAttempts || 1) === 1 ? "attempt" : "attempts"}</span>
+                <p>${escapeHtml(question.rationale || "No rationale was available in the extracted PDF text.")}</p>
+              </article>`).join("")}
+          </div>
+        </details>
+      </article>`;
+  }
+
   function renderResults() {
     const deck = currentDeck();
     if (!deck) return renderDecks();
@@ -492,6 +727,7 @@
           ${breakdownCard("By skill", breakdown(answered, "skill"))}
           ${breakdownCard("By difficulty", breakdown(answered, "difficulty"))}
         </div>
+        ${weakSpotsHtml(mistakes)}
       </section>`;
     appMain.focus({ preventScroll: true });
   }
