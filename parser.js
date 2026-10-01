@@ -189,6 +189,7 @@ function parseQuestionText(rawText, pageNumber = 1) {
     correct: null,
     incorrectAttempts: 0,
     lastIncorrectAnswer: null,
+    mistakeHistory: [],
     sourcePage: pageNumber,
     media: [],
   };
