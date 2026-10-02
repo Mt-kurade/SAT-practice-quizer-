@@ -19,7 +19,9 @@ python -m http.server 8000
 
 Then open `http://localhost:8000`. A local server is not required for most current browsers and does not upload any data.
 
-Text-based Reading and Writing exports are the primary supported format. Scanned questions and questions that depend on graphs, tables, or diagrams are reported in import diagnostics but may need manual support in a future version.
+Text-based Reading and Writing and Math exports are supported. Math imports preserve common equation symbols and can contain either four-option multiple-choice questions or student-produced responses (grid-ins). Grid-ins accept equivalent integer, decimal, and fraction forms when the PDF lists a numeric answer.
+
+Scanned questions and questions whose essential graph, table, diagram, or equation is stored only as an image are reported in import diagnostics but cannot be reconstructed from PDF text alone.
 
 ## Automated checks
 

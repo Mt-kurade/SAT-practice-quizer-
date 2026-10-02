@@ -11,7 +11,8 @@ function cleanInline(value = "") {
   return value
     .replace(/\u0000/g, "")
     .replace(/[ \t]+/g, " ")
-    .replace(/\s+([,.;:!?])/g, "$1")
+    // Keep the meaningful space before a leading decimal ("or .667").
+    .replace(/\s+([,;:!?]|\.(?!\d))/g, "$1")
     .replace(/([“‘(])\s+/g, "$1")
     .trim();
 }
@@ -20,6 +21,11 @@ function normalizeExtractedText(text = "") {
   let result = text
     .replace(/\r/g, "")
     .replace(/\u00a0/g, " ")
+    .replace(/[\u200b-\u200d\ufeff]/g, "")
+    .replace(/\ufb00/g, "ff")
+    .replace(/\ufb01/g, "fi")
+    .replace(/\ufb02/g, "fl")
+    .replace(/\u2215/g, "/")
     .replace(/[ \t]+/g, " ")
     .replace(/ *\n */g, "\n")
     .replace(/\n{3,}/g, "\n\n")
@@ -83,7 +89,7 @@ function markerRange(text, marker, from = 0) {
   for (const line of lines) {
     const start = offset;
     const end = start + line.length;
-    if (start >= from && cleanInline(line).toLowerCase() === marker.toLowerCase()) {
+    if (start >= from && cleanInline(line).replace(/:$/, "").toLowerCase() === marker.toLowerCase()) {
       return { start, contentStart: Math.min(text.length, end + 1) };
     }
     offset = end + 1;
@@ -93,7 +99,9 @@ function markerRange(text, marker, from = 0) {
 
 function metadataValue(header, label) {
   const lines = header.split("\n").map(cleanInline).filter(Boolean);
-  const index = lines.findIndex((line) => line.toLowerCase() === label.toLowerCase());
+  const inline = lines.find((line) => new RegExp(`^${label}\\s*:\\s*.+$`, "i").test(line));
+  if (inline) return cleanInline(inline.replace(new RegExp(`^${label}\\s*:\\s*`, "i"), ""));
+  const index = lines.findIndex((line) => line.replace(/:$/, "").toLowerCase() === label.toLowerCase());
   if (index < 0) return "";
   const blocked = new Set([...META_LABELS, ...SECTION_LABELS].map((item) => item.toLowerCase()));
   const values = [];
@@ -136,7 +144,7 @@ function cleanMultiline(text = "") {
 function parseAnswers(answerText) {
   // Option starts can share a visual line in compact exports.
   const prepared = `\n${answerText.replace(/\s+([A-D])[.)]\s+/g, "\n$1. ")}`;
-  const starts = [...prepared.matchAll(/(?:^|\n)\s*([A-D])[.)]\s*/gim)];
+  const starts = [...prepared.matchAll(/(?:^|\n)\s*([A-D])(?:[.)]|(?=\s*$))\s*/gim)];
   const answers = {};
   starts.forEach((match, index) => {
     const start = match.index + match[0].length;
@@ -146,13 +154,56 @@ function parseAnswers(answerText) {
   return answers;
 }
 
+function parseAcceptedAnswers(value = "") {
+  const cleaned = cleanInline(value)
+    .replace(/^(?:answer|answers)\s*(?:is|are)?\s*/i, "")
+    .replace(/[{}]/g, "")
+    .trim();
+  if (!cleaned) return [];
+
+  // Question Bank grid-ins commonly list alternatives with "or", commas,
+  // or semicolons. A comma between thousands digits remains part of a value.
+  return [...new Set(cleaned
+    .split(/\s+(?:or|and)\s+|;|,(?!\d{3}\b)/i)
+    .map((answer) => cleanInline(answer.replace(/^(?:and|or)\s+/i, "")))
+    .filter(Boolean))];
+}
+
+function numericValue(value) {
+  const normalized = String(value ?? "")
+    .trim()
+    .replace(/[−–—]/g, "-")
+    .replace(/,/g, "")
+    .replace(/\s+/g, "");
+  if (/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(normalized)) return Number(normalized);
+  const fraction = /^([+-]?(?:\d+(?:\.\d*)?|\.\d+))\/([+-]?(?:\d+(?:\.\d*)?|\.\d+))$/.exec(normalized);
+  if (fraction && Number(fraction[2]) !== 0) return Number(fraction[1]) / Number(fraction[2]);
+  return null;
+}
+
+function isAcceptedResponse(response, acceptedAnswers = []) {
+  const submitted = String(response ?? "").trim();
+  if (!submitted) return false;
+  return acceptedAnswers.some((accepted) => {
+    const expected = String(accepted).trim();
+    if (submitted.toLowerCase() === expected.toLowerCase()) return true;
+    const submittedNumber = numericValue(submitted);
+    const expectedNumber = numericValue(expected);
+    return submittedNumber !== null && expectedNumber !== null && Math.abs(submittedNumber - expectedNumber) < 1e-9;
+  });
+}
+
 function validateQuestion(question) {
   const errors = [];
   if (!question.questionId) errors.push("Question ID was not found");
   if (!question.passage && !question.prompt) errors.push("Question text was not found");
-  if (Object.keys(question.answers).length < 2) errors.push("Fewer than two answer choices were found");
-  if (!/^[A-D]$/.test(question.correctAnswer)) errors.push("Correct answer was not found");
-  if (question.correctAnswer && !question.answers[question.correctAnswer]) errors.push("Correct answer is missing from the parsed choices");
+  if (question.responseType === "multiple-choice") {
+    if (Object.keys(question.answers).length < 2) errors.push("Fewer than two answer choices were found");
+    if (!/^[A-D]$/.test(question.correctAnswer)) errors.push("Correct answer was not found");
+    if (question.correctAnswer && !question.answers[question.correctAnswer]) errors.push("Correct answer is missing from the parsed choices");
+  } else if (!question.acceptedAnswers.length) {
+    errors.push("Student-produced answer was not found");
+  }
   return errors;
 }
 
@@ -161,7 +212,7 @@ function parseQuestionText(rawText, pageNumber = 1) {
   const idMatch = /Question ID\s*:\s*([A-Za-z0-9-]+)/i.exec(text);
   const questionMarker = markerRange(text, "Question", idMatch?.index ?? 0);
   const answerMarker = questionMarker ? markerRange(text, "Answer", questionMarker.contentStart) : null;
-  const correctMatch = /Correct Answer\s*:\s*([A-D])/i.exec(text);
+  const correctMatch = /Correct Answer\s*:\s*([^\n]+)/i.exec(text);
   const rationaleMarker = markerRange(text, "Rationale", correctMatch?.index ?? 0);
 
   const headerEnd = questionMarker?.start ?? text.length;
@@ -170,7 +221,15 @@ function parseQuestionText(rawText, pageNumber = 1) {
   const questionBody = questionMarker ? text.slice(questionMarker.contentStart, questionEnd) : "";
   const answerBody = answerMarker ? text.slice(answerMarker.contentStart, answerEnd) : "";
   const rationale = rationaleMarker ? cleanMultiline(text.slice(rationaleMarker.contentStart)) : "";
-  const body = splitQuestionBody(questionBody);
+  const answers = parseAnswers(answerBody);
+  const correctValue = cleanInline(correctMatch?.[1] ?? "");
+  const choiceAnswer = /^[A-D]$/i.test(correctValue) && answers[correctValue.toUpperCase()]
+    ? correctValue.toUpperCase()
+    : "";
+  const responseType = Object.keys(answers).length >= 2 ? "multiple-choice" : "student-produced";
+  const body = /^Math$/i.test(metadataValue(text.slice(0, headerEnd), "Test"))
+    ? { passage: "", prompt: cleanMultiline(questionBody) }
+    : splitQuestionBody(questionBody);
 
   const question = {
     questionId: idMatch?.[1] ?? "",
@@ -181,8 +240,10 @@ function parseQuestionText(rawText, pageNumber = 1) {
     difficulty: metadataValue(text.slice(0, headerEnd), "Difficulty"),
     passage: body.passage,
     prompt: body.prompt,
-    answers: parseAnswers(answerBody),
-    correctAnswer: correctMatch?.[1]?.toUpperCase() ?? "",
+    answers,
+    responseType,
+    correctAnswer: responseType === "multiple-choice" ? choiceAnswer : correctValue,
+    acceptedAnswers: responseType === "student-produced" ? parseAcceptedAnswers(correctValue) : [],
     rationale,
     selectedAnswer: null,
     answered: false,
@@ -246,6 +307,8 @@ const SATParser = {
   validateQuestion,
   parseQuestionText,
   parseSatPages,
+  parseAcceptedAnswers,
+  isAcceptedResponse,
   suggestDeckName,
 };
 

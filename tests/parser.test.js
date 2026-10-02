@@ -2,6 +2,8 @@ const assert = require("node:assert/strict");
 const {
   parseQuestionText,
   parseSatPages,
+  parseAcceptedAnswers,
+  isAcceptedResponse,
   textItemsToLines,
   suggestDeckName,
 } = require("../parser.js");
@@ -61,4 +63,67 @@ const reconstructed = textItemsToLines([
 ]);
 assert.equal(reconstructed, "Answer\nA. First choice");
 
-console.log("Parser tests passed: acceptance question, partial failures, naming, and line reconstruction.");
+const mathMultipleChoice = `
+Question ID: math-mcq-1
+Assessment
+SAT
+Test
+Math
+Domain
+Advanced Math
+Skill
+Nonlinear equations
+Difficulty
+Medium
+Question
+The equation x² - 5x + 6 = 0 has two solutions. What is the product of the solutions?
+Answer
+A. 2
+B. 3
+C. 5
+D. 6
+Correct Answer: D
+Rationale
+The solutions are 2 and 3, so their product is 6.
+`;
+
+const parsedMathChoice = parseQuestionText(mathMultipleChoice, 4);
+assert.deepEqual(parsedMathChoice.errors, []);
+assert.equal(parsedMathChoice.question.test, "Math");
+assert.equal(parsedMathChoice.question.responseType, "multiple-choice");
+assert.equal(parsedMathChoice.question.passage, "");
+assert.match(parsedMathChoice.question.prompt, /x² - 5x/);
+assert.equal(parsedMathChoice.question.answers.D, "6");
+assert.equal(parsedMathChoice.question.correctAnswer, "D");
+
+const mathStudentProduced = `
+Question ID: math-spr-1
+Assessment: SAT
+Test: Math
+Domain: Algebra
+Skill: Linear equations in one variable
+Difficulty: Easy
+Question:
+If 3x = 2, what is the value of x?
+Answer:
+Correct Answer: 2/3 or .6666666667
+Rationale:
+Dividing both sides of 3x = 2 by 3 gives x = 2/3.
+`;
+
+const parsedMathSpr = parseQuestionText(mathStudentProduced, 5);
+assert.deepEqual(parsedMathSpr.errors, []);
+assert.equal(parsedMathSpr.question.responseType, "student-produced");
+assert.deepEqual(parsedMathSpr.question.acceptedAnswers, ["2/3", ".6666666667"]);
+assert.equal(parsedMathSpr.question.correctAnswer, "2/3 or .6666666667");
+assert.deepEqual(parseAcceptedAnswers("1,000; 1000"), ["1,000", "1000"]);
+assert.deepEqual(parseAcceptedAnswers("4, 5, or 6"), ["4", "5", "6"]);
+assert.equal(isAcceptedResponse("0.5", ["1/2"]), true);
+assert.equal(isAcceptedResponse("2/3", [".6666666667"]), true);
+assert.equal(isAcceptedResponse("1,000", ["1000"]), true);
+
+const mixedMathPage = parseSatPages([`${mathMultipleChoice}\n${mathStudentProduced}`]);
+assert.equal(mixedMathPage.questions.length, 2);
+assert.equal(mixedMathPage.diagnostics[0].success, true);
+
+console.log("Parser tests passed: Reading and Writing, math multiple choice, math grid-ins, partial failures, naming, and line reconstruction.");

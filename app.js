@@ -380,6 +380,7 @@
     const position = state.quizIndex + 1;
     setHeader(deck.name, `<span class="question-count">${escapeHtml(state.sequenceLabel ? `${state.sequenceLabel} · ` : "")}Question ${position} of ${state.sequence.length}</span><button class="button secondary text-button" data-header-action="pause">Pause &amp; exit</button>`);
     const answerEntries = Object.entries(question.answers);
+    const isStudentProduced = question.responseType === "student-produced";
     appMain.innerHTML = `
       <section class="quiz-page" aria-labelledby="question-prompt">
         <div class="question-meta">
@@ -389,9 +390,10 @@
           ${question.passage ? `<p class="passage">${escapeHtml(question.passage)}</p>` : ""}
           <p class="prompt" id="question-prompt">${escapeHtml(question.prompt || question.passage)}</p>
         </article>
-        <div class="answers" role="group" aria-label="Answer choices">
-          ${answerEntries.map(([letter, answer]) => answerButton(question, letter, answer)).join("")}
-        </div>
+        ${isStudentProduced ? studentResponseHtml(question) : `
+          <div class="answers" role="group" aria-label="Answer choices">
+            ${answerEntries.map(([letter, answer]) => answerButton(question, letter, answer)).join("")}
+          </div>`}
         ${question.answered || question.lastIncorrectAnswer ? feedbackHtml(question) : ""}
       </section>
       <footer class="quiz-footer">
@@ -409,6 +411,16 @@
         </div>
       </footer>`;
     appMain.focus({ preventScroll: true });
+  }
+
+  function studentResponseHtml(question) {
+    const disabled = question.answered ? "disabled" : "";
+    const statusClass = question.answered ? " correct" : question.lastIncorrectAnswer ? " incorrect" : "";
+    return `<div class="student-response${statusClass}">
+      <label for="student-response-input">Enter your answer</label>
+      <p>Use a decimal, integer, or fraction (for example, <span class="math-text">2/3</span>).</p>
+      <input id="student-response-input" class="student-response-input" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" value="${escapeHtml(question.selectedAnswer || "")}" ${disabled}>
+    </div>`;
   }
 
   function answerButton(question, letter, text) {
@@ -451,7 +463,10 @@
     const deck = currentDeck();
     const question = currentQuestion();
     if (!question?.selectedAnswer || question.answered) return;
-    if (question.selectedAnswer !== question.correctAnswer) {
+    const isCorrect = question.responseType === "student-produced"
+      ? SATParser.isAcceptedResponse(question.selectedAnswer, question.acceptedAnswers || [question.correctAnswer])
+      : question.selectedAnswer === question.correctAnswer;
+    if (!isCorrect) {
       question.mistakeHistory = Array.isArray(question.mistakeHistory) ? question.mistakeHistory : [];
       question.mistakeHistory.push({ answer: question.selectedAnswer, at: new Date().toISOString() });
       question.incorrectAttempts = (question.incorrectAttempts || 0) + 1;
@@ -666,6 +681,20 @@
     if (resultAction === "reset" && await resetDeck(deck)) return startDeck(deck.id);
   });
 
+  appMain.addEventListener("input", (event) => {
+    if (event.target.id !== "student-response-input") return;
+    const question = currentQuestion();
+    if (!question || question.answered) return;
+    question.selectedAnswer = event.target.value;
+    document.querySelector("[data-quiz-action='check']")?.toggleAttribute("disabled", !event.target.value.trim());
+  });
+
+  appMain.addEventListener("keydown", (event) => {
+    if (event.target.id !== "student-response-input" || event.key !== "Enter") return;
+    event.preventDefault();
+    checkAnswer();
+  });
+
   headerActions.addEventListener("click", (event) => {
     if (event.target.closest("[data-header-action='pause']")) pauseCurrentSession();
     else if (event.target.closest("[data-header-action='decks']")) renderDecks();
@@ -691,7 +720,7 @@
     const question = currentQuestion();
     if (!question) return;
     const key = event.key.toLowerCase();
-    if (ANSWER_KEYS[key] && !question.answered) {
+    if (question.responseType !== "student-produced" && ANSWER_KEYS[key] && !question.answered) {
       event.preventDefault();
       selectAnswer(ANSWER_KEYS[key]);
     } else if (event.key === "Enter") {
