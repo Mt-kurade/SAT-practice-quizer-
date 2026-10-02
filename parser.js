@@ -97,6 +97,21 @@ function markerRange(text, marker, from = 0) {
   return null;
 }
 
+function regexLineRange(text, pattern, from = 0) {
+  const lines = text.split("\n");
+  let offset = 0;
+  for (const line of lines) {
+    const start = offset;
+    const end = start + line.length;
+    if (start >= from && pattern.test(cleanInline(line))) {
+      return { start, contentStart: Math.min(text.length, end + 1) };
+    }
+    pattern.lastIndex = 0;
+    offset = end + 1;
+  }
+  return null;
+}
+
 function metadataValue(header, label) {
   const lines = header.split("\n").map(cleanInline).filter(Boolean);
   const inline = lines.find((line) => new RegExp(`^${label}\\s*:\\s*.+$`, "i").test(line));
@@ -143,8 +158,8 @@ function cleanMultiline(text = "") {
 
 function parseAnswers(answerText) {
   // Option starts can share a visual line in compact exports.
-  const prepared = `\n${answerText.replace(/\s+([A-D])[.)]\s+/g, "\n$1. ")}`;
-  const starts = [...prepared.matchAll(/(?:^|\n)\s*([A-D])(?:[.)]|(?=\s*$))\s*/gim)];
+  const prepared = `\n${answerText.replace(/[ \t]+([A-D])[.)][ \t]+/g, "\n$1. ")}`;
+  const starts = [...prepared.matchAll(/(?:^|\n)[ \t]*([A-D])(?:[.)]|(?=[ \t]*$))[ \t]*/gim)];
   const answers = {};
   starts.forEach((match, index) => {
     const start = match.index + match[0].length;
@@ -200,7 +215,7 @@ function validateQuestion(question) {
   if (question.responseType === "multiple-choice") {
     if (Object.keys(question.answers).length < 2) errors.push("Fewer than two answer choices were found");
     if (!/^[A-D]$/.test(question.correctAnswer)) errors.push("Correct answer was not found");
-    if (question.correctAnswer && !question.answers[question.correctAnswer]) errors.push("Correct answer is missing from the parsed choices");
+    if (question.correctAnswer && !Object.prototype.hasOwnProperty.call(question.answers, question.correctAnswer)) errors.push("Correct answer is missing from the parsed choices");
   } else if (!question.acceptedAnswers.length) {
     errors.push("Student-produced answer was not found");
   }
@@ -210,7 +225,12 @@ function validateQuestion(question) {
 function parseQuestionText(rawText, pageNumber = 1) {
   const text = normalizeExtractedText(rawText);
   const idMatch = /Question ID\s*:\s*([A-Za-z0-9-]+)/i.exec(text);
-  const questionMarker = markerRange(text, "Question", idMatch?.index ?? 0);
+  const escapedId = (idMatch?.[1] ?? "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const explicitQuestionMarker = markerRange(text, "Question", idMatch?.index ?? 0);
+  const idQuestionMarker = escapedId
+    ? regexLineRange(text, new RegExp(`^ID\\s*:\\s*${escapedId}\\s*$`, "i"), (idMatch?.index ?? 0) + (idMatch?.[0]?.length ?? 0))
+    : null;
+  const questionMarker = explicitQuestionMarker || idQuestionMarker;
   const answerMarker = questionMarker ? markerRange(text, "Answer", questionMarker.contentStart) : null;
   const correctMatch = /Correct Answer\s*:\s*([^\n]+)/i.exec(text);
   const rationaleMarker = markerRange(text, "Rationale", correctMatch?.index ?? 0);
@@ -223,7 +243,7 @@ function parseQuestionText(rawText, pageNumber = 1) {
   const rationale = rationaleMarker ? cleanMultiline(text.slice(rationaleMarker.contentStart)) : "";
   const answers = parseAnswers(answerBody);
   const correctValue = cleanInline(correctMatch?.[1] ?? "");
-  const choiceAnswer = /^[A-D]$/i.test(correctValue) && answers[correctValue.toUpperCase()]
+  const choiceAnswer = /^[A-D]$/i.test(correctValue) && Object.prototype.hasOwnProperty.call(answers, correctValue.toUpperCase())
     ? correctValue.toUpperCase()
     : "";
   const responseType = Object.keys(answers).length >= 2 ? "multiple-choice" : "student-produced";
@@ -258,30 +278,68 @@ function parseQuestionText(rawText, pageNumber = 1) {
   return { question, errors: validateQuestion(question), extractedText: text };
 }
 
-/** Parse pages independently; a malformed page never invalidates good pages. */
+/**
+ * Parse the PDF as one document. Educator Question Bank exports often put the
+ * prompt on one page and its answer/rationale on the next, so page-at-a-time
+ * validation incorrectly rejects both halves.
+ */
 function parseSatPages(pageTexts) {
   const questions = [];
-  const diagnostics = [];
+  const normalizedPages = pageTexts.map(normalizeExtractedText);
+  const pageStarts = [];
+  let documentText = "";
+  normalizedPages.forEach((page, index) => {
+    if (index) documentText += "\n";
+    pageStarts[index] = documentText.length;
+    documentText += page;
+  });
 
-  pageTexts.forEach((rawText, index) => {
-    const pageNumber = index + 1;
-    const normalized = normalizeExtractedText(rawText);
-    const idStarts = [...normalized.matchAll(/Question ID\s*:/gi)].map((match) => match.index);
-    const chunks = idStarts.length
-      ? idStarts.map((start, i) => normalized.slice(start, idStarts[i + 1] ?? normalized.length))
-      : [normalized];
+  const pageForOffset = (offset) => {
+    let pageIndex = pageStarts.length - 1;
+    while (pageIndex > 0 && pageStarts[pageIndex] > offset) pageIndex -= 1;
+    return pageIndex + 1;
+  };
+  const diagnostics = normalizedPages.map((extractedText, index) => ({
+    pageNumber: index + 1,
+    success: false,
+    questionIds: [],
+    errors: [],
+    extractedText,
+  }));
 
-    const pageResults = chunks.map((chunk) => parseQuestionText(chunk, pageNumber));
-    const successful = pageResults.filter((result) => result.errors.length === 0);
-    questions.push(...successful.map((result) => result.question));
-    const allErrors = pageResults.filter((result) => result.errors.length).flatMap((result) => result.errors);
-    diagnostics.push({
-      pageNumber,
-      success: successful.length > 0,
-      questionIds: pageResults.map((result) => result.question.questionId).filter(Boolean),
-      errors: allErrors,
-      extractedText: normalized,
+  const idStarts = [...documentText.matchAll(/Question ID\s*:/gi)].map((match) => match.index);
+  if (!idStarts.length && normalizedPages.length) {
+    const result = parseQuestionText(documentText, 1);
+    diagnostics[0].questionIds = result.question.questionId ? [result.question.questionId] : [];
+    diagnostics[0].errors = result.errors;
+    if (!result.errors.length) {
+      questions.push(result.question);
+      diagnostics[0].success = true;
+    }
+    return { questions, diagnostics };
+  }
+
+  idStarts.forEach((start, index) => {
+    const end = idStarts[index + 1] ?? documentText.length;
+    const startPage = pageForOffset(start);
+    const endPage = pageForOffset(Math.max(start, end - 1));
+    const result = parseQuestionText(documentText.slice(start, end), startPage);
+    result.question.sourceEndPage = endPage;
+    const coveredPages = Array.from({ length: endPage - startPage + 1 }, (_, pageIndex) => startPage + pageIndex);
+    coveredPages.forEach((pageNumber) => {
+      const diagnostic = diagnostics[pageNumber - 1];
+      if (result.question.questionId && !diagnostic.questionIds.includes(result.question.questionId)) {
+        diagnostic.questionIds.push(result.question.questionId);
+      }
+      if (!result.errors.length) diagnostic.success = true;
+      else diagnostic.errors.push(...result.errors);
     });
+    if (!result.errors.length) questions.push(result.question);
+  });
+
+  diagnostics.forEach((diagnostic) => {
+    diagnostic.errors = [...new Set(diagnostic.errors)];
+    if (!diagnostic.success && !diagnostic.errors.length) diagnostic.errors.push("No complete question text was found on this page");
   });
 
   return { questions, diagnostics };

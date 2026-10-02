@@ -19,9 +19,9 @@ python -m http.server 8000
 
 Then open `http://localhost:8000`. A local server is not required for most current browsers and does not upload any data.
 
-Text-based Reading and Writing and Math exports are supported. Math imports preserve common equation symbols and can contain either four-option multiple-choice questions or student-produced responses (grid-ins). Grid-ins accept equivalent integer, decimal, and fraction forms when the PDF lists a numeric answer.
+Text-based Reading and Writing and Math exports are supported. Math imports are parsed across page boundaries and displayed from spoiler-safe original-PDF crops, preserving equations, graphs, tables, diagrams, and graphical answer choices. They can contain either four-option multiple-choice questions or student-produced responses (grid-ins). Grid-ins accept equivalent integer, decimal, and fraction forms when the PDF lists a numeric answer.
 
-Scanned questions and questions whose essential graph, table, diagram, or equation is stored only as an image are reported in import diagnostics but cannot be reconstructed from PDF text alone.
+Fully scanned PDFs without extractable Question Bank labels cannot be indexed automatically and are reported in import diagnostics.
 
 ## Automated checks
 

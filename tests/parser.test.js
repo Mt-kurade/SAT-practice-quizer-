@@ -45,11 +45,11 @@ assert.equal(parsed.question.sourcePage, 3);
 assert.equal(parsed.question.incorrectAttempts, 0);
 assert.equal(parsed.question.lastIncorrectAnswer, null);
 
-const withBadPage = parseSatPages([acceptanceQuestion, "A scanned page with no extractable question."]);
+const withBadPage = parseSatPages(["A scanned page with no extractable question.", acceptanceQuestion]);
 assert.equal(withBadPage.questions.length, 1);
 assert.equal(withBadPage.diagnostics.length, 2);
-assert.equal(withBadPage.diagnostics[0].success, true);
-assert.equal(withBadPage.diagnostics[1].success, false);
+assert.equal(withBadPage.diagnostics[0].success, false);
+assert.equal(withBadPage.diagnostics[1].success, true);
 
 assert.equal(
   suggestDeckName([parsed.question], "export.pdf"),
@@ -96,6 +96,12 @@ assert.match(parsedMathChoice.question.prompt, /x² - 5x/);
 assert.equal(parsedMathChoice.question.answers.D, "6");
 assert.equal(parsedMathChoice.question.correctAnswer, "D");
 
+const graphicalMathChoices = mathMultipleChoice
+  .replace("A. 2\nB. 3\nC. 5\nD. 6", "A.\nB.\nC.\nD.");
+const parsedGraphicalChoices = parseQuestionText(graphicalMathChoices, 4);
+assert.deepEqual(parsedGraphicalChoices.errors, []);
+assert.deepEqual(Object.keys(parsedGraphicalChoices.question.answers), ["A", "B", "C", "D"]);
+
 const mathStudentProduced = `
 Question ID: math-spr-1
 Assessment: SAT
@@ -125,5 +131,16 @@ assert.equal(isAcceptedResponse("1,000", ["1000"]), true);
 const mixedMathPage = parseSatPages([`${mathMultipleChoice}\n${mathStudentProduced}`]);
 assert.equal(mixedMathPage.questions.length, 2);
 assert.equal(mixedMathPage.diagnostics[0].success, true);
+
+const answerBoundary = mathMultipleChoice.indexOf("Answer");
+const splitMathPages = parseSatPages([
+  mathMultipleChoice.slice(0, answerBoundary),
+  mathMultipleChoice.slice(answerBoundary),
+  mathStudentProduced,
+]);
+assert.equal(splitMathPages.questions.length, 2);
+assert.equal(splitMathPages.questions[0].sourcePage, 1);
+assert.equal(splitMathPages.questions[0].sourceEndPage, 2);
+assert.deepEqual(splitMathPages.diagnostics.map((item) => item.success), [true, true, true]);
 
 console.log("Parser tests passed: Reading and Writing, math multiple choice, math grid-ins, partial failures, naming, and line reconstruction.");

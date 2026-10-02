@@ -187,7 +187,7 @@
         <div>
           <div class="empty-icon" aria-hidden="true">＋</div>
           <h2>Turn a PDF into practice</h2>
-          <p>Import a text-based SAT Educator Question Bank PDF. Questions, answers, explanations, and progress stay on this device.</p>
+          <p>Import an SAT Educator Question Bank PDF. Math equations, diagrams, answer choices, explanations, and progress stay on this device.</p>
           <button class="button primary" data-action="open-import">Import your first PDF</button>
         </div>
       </div>`;
@@ -229,6 +229,119 @@
     });
   }
 
+  function positionedLines(items = []) {
+    const positioned = items
+      .filter((item) => item && typeof item.str === "string" && item.str.trim())
+      .map((item) => ({
+        text: item.str,
+        x: Number(item.transform?.[4] ?? 0),
+        y: Number(item.transform?.[5] ?? 0),
+        width: Number(item.width ?? 0),
+        height: Math.max(8, Math.abs(Number(item.height ?? item.transform?.[3] ?? 10))),
+      }));
+    const lines = [];
+    positioned.sort((a, b) => Math.abs(b.y - a.y) > 2.5 ? b.y - a.y : a.x - b.x).forEach((item) => {
+      let line = lines.find((candidate) => Math.abs(candidate.y - item.y) <= 2.5);
+      if (!line) {
+        line = { y: item.y, height: item.height, items: [] };
+        lines.push(line);
+      }
+      line.height = Math.max(line.height, item.height);
+      line.items.push(item);
+    });
+    return lines.map((line) => ({
+      ...line,
+      text: SATParser.cleanInline(line.items.sort((a, b) => a.x - b.x).map((item) => item.text).join(" ")),
+    }));
+  }
+
+  function visualSegments(question, pageItems) {
+    const escapedId = question.questionId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const startPattern = new RegExp(`^ID\\s*:\\s*${escapedId}\\s*$`, "i");
+    const segments = [];
+    let foundEnd = false;
+    for (let pageNumber = question.sourcePage; pageNumber <= (question.sourceEndPage || question.sourcePage); pageNumber += 1) {
+      const lines = positionedLines(pageItems[pageNumber - 1]);
+      const startLine = pageNumber === question.sourcePage ? lines.find((line) => startPattern.test(line.text)) : null;
+      const endLine = lines.find((line) => /^Correct Answer\s*:/i.test(line.text) && (!startLine || line.y < startLine.y));
+      const meaningfulBeforeEnd = !endLine || lines.some((line) =>
+        line.y > endLine.y &&
+        !new RegExp(`^ID\\s*:\\s*${escapedId}\\s+Answer$`, "i").test(line.text) &&
+        !/^\s*$/.test(line.text)
+      );
+      if (meaningfulBeforeEnd) segments.push({ pageNumber, startLine, endLine });
+      if (endLine) {
+        foundEnd = true;
+        break;
+      }
+    }
+    return foundEnd ? segments : [];
+  }
+
+  async function renderQuestionVisuals(question, pages, pageItems) {
+    const segments = visualSegments(question, pageItems);
+    const visuals = [];
+    for (const segment of segments) {
+      const page = pages[segment.pageNumber - 1];
+      const viewport = page.getViewport({ scale: 1.4 });
+      const pageCanvas = document.createElement("canvas");
+      pageCanvas.width = Math.ceil(viewport.width);
+      pageCanvas.height = Math.ceil(viewport.height);
+      const pageContext = pageCanvas.getContext("2d", { alpha: false });
+      pageContext.fillStyle = "#fff";
+      pageContext.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+      await page.render({ canvasContext: pageContext, viewport }).promise;
+
+      const toViewportY = (pdfY) => viewport.convertToViewportPoint(0, pdfY)[1];
+      const proposedTop = segment.startLine
+        ? Math.max(0, Math.floor(toViewportY(segment.startLine.y + segment.startLine.height) - 16))
+        : 0;
+      const proposedBottom = segment.endLine
+        ? Math.min(pageCanvas.height, Math.ceil(toViewportY(segment.endLine.y + segment.endLine.height) - 8))
+        : pageCanvas.height;
+      if (proposedBottom - proposedTop < 40) continue;
+
+      // Trim print margins at the first sustained blank gap. This keeps the
+      // original equations and diagrams while avoiding a page of whitespace
+      // (and ignores browser-print footers below that gap).
+      const context = pageCanvas.getContext("2d", { willReadFrequently: true });
+      const pixels = context.getImageData(0, proposedTop, pageCanvas.width, proposedBottom - proposedTop);
+      let minX = pageCanvas.width;
+      let maxX = 0;
+      let lastInkRow = 0;
+      let seenInk = false;
+      const blankGap = 120;
+      for (let y = 0; y < pixels.height; y += 1) {
+        let rowHasInk = false;
+        for (let x = 0; x < pixels.width; x += 2) {
+          const offset = (y * pixels.width + x) * 4;
+          if (pixels.data[offset] < 248 || pixels.data[offset + 1] < 248 || pixels.data[offset + 2] < 248) {
+            rowHasInk = true;
+            minX = Math.min(minX, x);
+            maxX = Math.max(maxX, x);
+          }
+        }
+        if (rowHasInk) {
+          seenInk = true;
+          lastInkRow = y;
+        } else if (seenInk && y - lastInkRow > blankGap) {
+          break;
+        }
+      }
+      if (!seenInk) continue;
+      const left = Math.max(0, minX - 24);
+      const right = Math.min(pageCanvas.width, maxX + 26);
+      const top = proposedTop;
+      const bottom = Math.min(proposedBottom, proposedTop + lastInkRow + 24);
+      const crop = document.createElement("canvas");
+      crop.width = right - left;
+      crop.height = bottom - top;
+      crop.getContext("2d", { alpha: false }).drawImage(pageCanvas, left, top, crop.width, crop.height, 0, 0, crop.width, crop.height);
+      visuals.push(crop.toDataURL("image/webp", 0.86));
+    }
+    return visuals;
+  }
+
   async function importPdf(file) {
     if (!file.name.toLowerCase().endsWith(".pdf") && file.type !== "application/pdf") {
       renderImportPicker("Please choose a PDF file.");
@@ -241,11 +354,15 @@
       const bytes = new Uint8Array(await file.arrayBuffer());
       const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
       const pageTexts = [];
+      const pages = [];
+      const pageItems = [];
       for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
         const progress = document.querySelector("#import-progress");
         if (progress) progress.textContent = `Extracting page ${pageNumber} of ${pdf.numPages}…`;
         const page = await pdf.getPage(pageNumber);
         const content = await page.getTextContent({ includeMarkedContent: false });
+        pages.push(page);
+        pageItems.push(content.items);
         pageTexts.push(SATParser.textItemsToLines(content.items));
       }
       const parsed = SATParser.parseSatPages(pageTexts);
@@ -253,6 +370,15 @@
         state.preview = { file, ...parsed };
         renderImportFailure("No complete SAT questions were detected. Open diagnostics below to inspect the extracted text.");
         return;
+      }
+      for (let index = 0; index < parsed.questions.length; index += 1) {
+        const question = parsed.questions[index];
+        const sourceText = pageTexts.slice(question.sourcePage - 1, question.sourceEndPage || question.sourcePage).join("\n");
+        const isMath = /^Math$/i.test(question.test) || /\bMath\b/i.test(sourceText);
+        if (!isMath) continue;
+        const progress = document.querySelector("#import-progress");
+        if (progress) progress.textContent = `Formatting math question ${index + 1} of ${parsed.questions.length}…`;
+        question.visualPages = await renderQuestionVisuals(question, pages, pageItems);
       }
       state.preview = { file, ...parsed };
       renderImportPreview();
@@ -381,18 +507,21 @@
     setHeader(deck.name, `<span class="question-count">${escapeHtml(state.sequenceLabel ? `${state.sequenceLabel} · ` : "")}Question ${position} of ${state.sequence.length}</span><button class="button secondary text-button" data-header-action="pause">Pause &amp; exit</button>`);
     const answerEntries = Object.entries(question.answers);
     const isStudentProduced = question.responseType === "student-produced";
+    const hasVisual = Array.isArray(question.visualPages) && question.visualPages.length > 0;
     appMain.innerHTML = `
       <section class="quiz-page" aria-labelledby="question-prompt">
         <div class="question-meta">
           ${[question.test, question.domain, question.skill, question.difficulty].filter(Boolean).map((value) => `<span class="pill">${escapeHtml(value)}</span>`).join("")}
         </div>
+        ${hasVisual ? `<h1 id="question-prompt" class="sr-only">SAT Math question ${escapeHtml(question.questionId)}</h1>` : ""}
         <article class="question-card">
-          ${question.passage ? `<p class="passage">${escapeHtml(question.passage)}</p>` : ""}
-          <p class="prompt" id="question-prompt">${escapeHtml(question.prompt || question.passage)}</p>
+          ${hasVisual ? `<div class="question-visuals">${question.visualPages.map((source, index) => `<img src="${source}" alt="Question ${escapeHtml(question.questionId)}${question.visualPages.length > 1 ? `, part ${index + 1}` : ""}">`).join("")}</div>` : `
+            ${question.passage ? `<p class="passage">${escapeHtml(question.passage)}</p>` : ""}
+            <p class="prompt" id="question-prompt">${escapeHtml(question.prompt || question.passage)}</p>`}
         </article>
         ${isStudentProduced ? studentResponseHtml(question) : `
-          <div class="answers" role="group" aria-label="Answer choices">
-            ${answerEntries.map(([letter, answer]) => answerButton(question, letter, answer)).join("")}
+          <div class="answers${hasVisual ? " visual-choice-picker" : ""}" role="group" aria-label="Answer choices">
+            ${answerEntries.map(([letter, answer]) => answerButton(question, letter, answer, hasVisual)).join("")}
           </div>`}
         ${question.answered || question.lastIncorrectAnswer ? feedbackHtml(question) : ""}
       </section>
@@ -423,7 +552,7 @@
     </div>`;
   }
 
-  function answerButton(question, letter, text) {
+  function answerButton(question, letter, text, compact = false) {
     const selected = question.selectedAnswer === letter;
     const correct = question.answered && question.correctAnswer === letter;
     const incorrect = !question.answered && question.lastIncorrectAnswer === letter;
@@ -431,8 +560,8 @@
     let result = "";
     if (correct) result = "✓ Correct answer";
     else if (incorrect) result = "✕ Try again";
-    return `<button class="${classes}" data-answer="${letter}" ${question.answered ? "disabled" : ""} aria-pressed="${selected}">
-      <span class="answer-letter">${letter}</span><span class="answer-text">${escapeHtml(text)}</span>${result ? `<span class="answer-result">${result}</span>` : ""}
+    return `<button class="${classes}" data-answer="${letter}" ${question.answered ? "disabled" : ""} aria-pressed="${selected}" aria-label="Select choice ${letter}">
+      <span class="answer-letter">${letter}</span>${compact ? `<span class="answer-text">Select ${letter}</span>` : `<span class="answer-text">${escapeHtml(text)}</span>`}${result ? `<span class="answer-result">${result}</span>` : ""}
     </button>`;
   }
 
@@ -452,7 +581,7 @@
 
   function selectAnswer(letter) {
     const question = currentQuestion();
-    if (!question || question.answered || !question.answers[letter]) return;
+    if (!question || question.answered || !Object.prototype.hasOwnProperty.call(question.answers, letter)) return;
     question.selectedAnswer = letter;
     question.lastIncorrectAnswer = null;
     renderQuiz();
